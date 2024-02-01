@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod
+spec:
+  containers:
+  - image: busybox
+    name: busybox-1
+    command: ["/bin/sh", "-c", "sleep 3600"]    
+    volumeMounts:
+    - mountPath: /etc/foo
+      name: shared-volume
+  - image: busybox
+    name: busybox-2
+    command: ["/bin/sh", "-c", "sleep 3600"]  
+    volumeMounts:
+    - mountPath: /etc/foo
+      name: shared-volume
+        
+  volumes:
+  - name: shared-volume
+    emptyDir:
+      

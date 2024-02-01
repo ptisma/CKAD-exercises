@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: busybox-double
+  name: busybox-double
+spec:
+  containers:
+  - args:
+    - /bin/sh
+    - -c
+    - sleep 3600
+    image: busybox
+    name: busybox-1
+    volumeMounts:
+    - mountPath: /etc/foo
+      name: shared-volume
+  - args:
+    - /bin/sh
+    - -c
+    - sleep 3600
+    image: busybox
+    name: busybox-2
+    volumeMounts:
+    - mountPath: /etc/foo
+      name: shared-volume
+  volumes:
+  - name: shared-volume
+    emptyDir:
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}

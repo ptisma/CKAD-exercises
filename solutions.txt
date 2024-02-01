@@ -1,0 +1,803 @@
+Core Concepts
+
+Create a namespace called 'mynamespace' and a pod with image nginx called nginx on this namespace:
+kubectl create namespace mynamespace
+kubectl run nginx --image=nginx --restart=Never -n mynamespace
+
+
+Create the pod that was just described using YAML:
+kubectl run nginx --image=nginx --restart=Never -n mynamespace --dry-run=client -o yaml > nginx.yaml
+cat nginx.yaml
+kubectl apply -f nginx.yaml
+
+
+Create a busybox pod (using kubectl command) that runs the command "env". Run it and see the output:
+kubectl run busybox --image busybox --restart=Never --comand -- env
+kubectl logs busybox
+
+Create a busybox pod (using YAML) that runs the command "env". Run it and see the output:
+kubectl run busybox --image busybox --restart=Never --dry-run -o yaml --command -- env > busybox.yaml
+kubectl apply -f busybox.yaml
+kubectl logs busybox
+
+
+Get the YAML for a new namespace called 'myns' without creating it:
+kubectl create namespace myns --dry-run -o yaml > myns.yaml
+cat myns.yaml
+
+Get the YAML for a new ResourceQuota called 'myrq' with hard limits of 1 CPU, 1G memory and 2 pods without creating it:
+kubectl create quota myrq --hard=cpu=1,memory=1G,pods=2 --dry-run=client -o yaml
+
+Get pods on all namespaces:
+kubectl get pods -A
+
+Create a pod with image nginx called nginx and expose traffic on port 80:
+kubectl run nginx --image=nginx --restart=Never --port=80
+
+Change pod's image to nginx:1.7.1. Observe that the container will be restarted as soon as the image gets pulled:
+kubectl set image pod/nginx nginx=nginx.1.7.1
+kubectl describe pod nginx
+kubectl get pod nginx -w
+
+Get nginx pod's ip created in previous step, use a temp busybox image to wget its '/':
+kubectl get pods -o wide
+kubectl run busybox --it --rm --image=busybox --restart=Never --command -- wget http://10.244.0.66:80
+
+Get pod's YAML:
+kubectl get pod nginx -o yaml
+
+Get information about the pod, including details about potential issues (e.g. pod hasn't started):
+kubectl describe pod nginx
+
+Get pod logs:
+kubectl logs nginx
+
+If pod crashed and restarted, get logs about the previous instance:
+kubectl logs nginx --previous
+Notes: we can only see the previous, not the ones before
+
+Execute a simple shell on the nginx pod:
+kubectl exec -it nginx -- /bin/sh
+Notes: -it flag basically attaches our terminal as STDIN
+
+Create a busybox pod that echoes 'hello world' and then exits:
+kubectl run -it busybox --image=busybox --restart=Never -- echo 'Hello world'
+
+Do the same, but have the pod deleted automatically when it's completed:
+kubectl run -it --rm busybox --image=busybox --restart=Never -- echo 'Hello world'
+
+Create an nginx pod and set an env value as 'var1=val1'. Check the env value existence within the pod:
+kubectl run nginx --image=nginx --restart=Never --env=var1=val1
+kubectl exec -it nginx -- sh -c 'echo $var1
+Notes: If we dont specify the shell, we will run the command without the shell and therefore print empty value since we don't have access to ENV var from shell.
+
+
+Chapter notes: learned the run and set commands, use the --help flag to explanations and examples
+kubectl create if the resource exsists will result in error
+kubectl apply idempotent, so creation and update
+when passing the command to the busybox, there is a difference between the /bin/sh -c "ls" and ls, first launches the shell and then executes the command, another just uses the command, for env vars we need shell.
+
+
+
+
+Multi-Container Pods
+
+Create a Pod with two containers, both with image busybox and command "echo hello; sleep 3600". Connect to the second container and run 'ls':
+vi multi-busybox.yaml (edit the yaml)
+kubectl apply -f multi-busybox.yaml
+kubectl exec multi-busybox -c busybox-1 -it -- ls
+
+Create a pod with an nginx container exposed on port 80. 
+Add a busybox init container which downloads a page using "wget -O /work-dir/index.html http://neverssl.com/online". 
+Make a volume of type emptyDir and mount it in both containers. 
+For the nginx container, mount it on "/usr/share/nginx/html" and for the initcontainer, mount it on "/work-dir". 
+When done, get the IP of the created pod and create a busybox pod and run "wget -O- IP":
+
+vi nginx-busybox.yaml
+kubectl apply -f nginx-busybox.yaml
+kubectl get pods -o wide
+kubectl run busybox -it --rm --image=busybox --restart=Never -- wget -O- 10.244.0.89:80
+
+
+
+Pod Design
+
+Labels and annotations
+Create 3 pods with names nginx1,nginx2,nginx3. All of them should have the label app=v1
+kubectl run nginx1 --image=nginx --labels="app=v1"
+kubectl run nginx2 --image=nginx --labels="app=v1"
+kubectl run nginx3 --image=nginx --labels="app=v1"
+
+Show all labels of the pods:
+kubectl get pods --show-labels=true
+
+Change the labels of pod 'nginx2' to be app=v2:
+kubectl label pods nginx2 --overwrite=true app=v2
+
+Get the label 'app' for the pods (show a column with APP labels):
+kubectl get pods -L app
+
+Get only the 'app=v2' pods:
+kubectl get pods -l app=v2
+
+Add a new label tier=web to all pods having 'app=v2' or 'app=v1' labels:
+kubectl label pods -l "app in (v1,v2)" tier=web
+
+Add an annotation 'owner: marketing' to all pods having 'app=v2' label
+kubectl annotate pods -l app=v2 owner='marketing'
+
+Remove the 'app' label from the pods we created before:
+kubectl label pods nginx1 app-
+kubectl label pods nginx2 app-
+kubectl label pods nginx3 app-
+
+Annotate pods nginx1, nginx2, nginx3 with "description='my description'" value:
+kubectl annotate pods nginx1 nginx2 nginx3 description='my description'
+
+Check the annotations for pod nginx1:
+kubectl annotate pod nginx1 --list
+
+Remove the annotations for these three pods:
+kubectl annotate pods nginx1 nginx2 nginx3 description-
+
+Remove these pods to have a clean state in your cluster:
+kubectl delete pod nginx1
+kubectl delete pod nginx2
+kubectl delete pod nginx3
+
+Pod Placement
+Create a pod that will be deployed to a Node that has the label 'accelerator=nvidia-tesla-p100':
+vi nginx-placement.yaml
+kubectl label nodes <your-node-name> accelerator=nvidia-tesla-p100
+kubectl apply -f nginx-placement.yaml
+
+Taint a node with key tier and value frontend with the effect NoSchedule. Then, create a pod that tolerates this taint:
+kubectl get nodes
+kubectl taint nodes minikube tier=frontend:NoSchedule
+kubectl describe node minikube
+vi nginx-tolerate.yaml
+kubectl apply -f nginx-tolerate.yaml
+
+Create a pod that will be placed on node controlplane. Use nodeSelector and tolerations:
+vi nginx-controlplane.yaml 
+
+Deployments
+Create a deployment with image nginx:1.18.0, called nginx, having 2 replicas, defining port 80 as the port that this container exposes (don't create a service for this deployment):
+kubectl create deployment nginx --image="nginx:1.18.0" --replicas=2 --port=80
+
+View the YAML of this deployment:
+kubectl get deployment nginx -o yaml
+
+View the YAML of the replica set that was created by this deployment:
+kubectl get rs -l app=nginx # if you created deployment by 'create' command
+kubectl get replicaset nginx-54bcfc567b -o yaml
+
+Get the YAML for one of the pods:
+kubectl get pods -l app=nginx
+kubectl get pod nginx-54bcfc567b-48rt4 -o yaml
+
+Check how the deployment rollout is going:
+kubectl rollout status deployment nginx
+
+Update the nginx image to nginx:1.19.8:
+kubectl set image deploy nginx nginx=nginx:1.19.8
+or even better
+kubectl edit deployment nginx and then configure it manually
+
+
+Check the rollout history and confirm that the replicas are OK:
+kubectl rollout history deploy nginx
+kubectl get deploy nginx
+kubectl get rs # check that a new replica set has been created
+kubectl get po
+
+Undo the latest rollout and verify that new pods have the old image (nginx:1.18.0):
+kubectl rollout undo deploy nginx
+kubectl describe po nginx-5ff4457d65-nslcl | grep -i image # should be nginx:1.18.0
+
+Do an on purpose update of the deployment with a wrong image nginx:1.91:
+kubectl set image deploy nginx nginx=nginx:1.91
+
+Verify that something's wrong with the rollout:
+kubectl rollout status deploy nginx
+Return the deployment to the second revision (number 2) and verify the image is nginx:1.19.8
+kubectl rollout undo deploy nginx --to-revision=5
+
+Return the deployment to the second revision (number 2) and verify the image is nginx:1.19.8
+kubectl rollout undo deploy nginx --to-revision=4
+
+Scale the deployment to 5 replicas:
+kubectl scale deployment --replicas=5  nginx
+
+Autoscale the deployment, pods between 5 and 10, targetting CPU utilization at 80%:
+kubectl autoscale deployment nginx --max=10 --min=5 --cpu-percent=80
+kubectl get hpa nginx
+
+Pause the rollout of the deployment:
+kubectl rollout pause deployment nginx
+
+Update the image to nginx:1.19.9 and check that there's nothing going on, since we paused the rollout:
+kubectl set image deploy nginx nginx=nginx:1.19.9
+kubectl rollout status deployment nginx
+
+Resume the rollout and check that the nginx:1.19.9 image has been applied:
+kubectl rollout resume deployment nginx
+kubectl rollout history deploy nginx
+kubectl get pod nginx-dccc4fccb-5bgpc -o yaml | grep -i image
+
+Delete the deployment and the horizontal pod autoscaler you created:
+kubectl delete deploy nginx && kubectl delete hpa nginx
+
+Implement canary deployment by running two instances of nginx marked as version=v1 and version=v2: 
+so that the load is balanced at 75%-25% ratio:
+vi nginx-canary-1.yaml
+cp nginx-canary-1.yaml nginx-canary-2.yaml
+vi nginx-canary-2.yaml
+vi nginx-service-canary.yaml
+kubectl apply -f nginx-service-canary.yaml
+kubectl apply -f nginx-canary-1.yaml
+kubectl apply -f nginx-canary-2.yaml
+
+kubectl run -it --rm busybox --image=busybox --restart=Never -- wget -O- http://nginx-canary-service.default.svc:80
+
+
+Chapter notes:
+set based requirement label selector -l "app in (v1,v2)"
+multiple label at ones kubectl label pods x1 x2 app=v1
+taint==ban smth
+tolerate==ignores the taint, at pod level
+create= for deployment and jobs, not pods, use run, with it you can only create single container/pod for deployment
+rollout command to checkout how deployment is rolling
+wget doesnt have curl
+selectors have AND logic
+service default dns "name.namespace.svc"
+
+
+Jobs
+Create a job named pi with image perl:5.34 that runs the command with arguments 
+"perl -Mbignum=bpi -wle 'print bpi(2000)'":
+kubectl create job pi --image=perl:5.34 -- perl -Mbignum=bpi -wle 'print bpi(2000)'
+kubectl logs job/pi
+
+Create a job with the image busybox that executes the command 'echo hello;sleep 30;echo world':
+kubectl create job busybox --image=busybox -- /bin/sh -c 'echo hello;sleep 30;echo world'
+
+Follow the logs for the pod (you'll wait for 30 seconds):
+kubectl logs -f jobs/busybox
+
+See the status of the job, describe it and see the logs:
+kubectl get jobs
+kubectl describe jobs busybox
+kubectl logs job/busybox
+
+Delete the job:
+kubectl delete job busybox
+
+Create a job but ensure that it will be automatically terminated by kubernetes if it takes more than 30 seconds to execute:
+vi pod-design/jobs/timeout-job.yaml
+kubectl apply -f pod-design/jobs/timeout-job.yaml
+
+Create the same job, make it run 5 times, one after the other. 
+Verify its status and delete it:
+kubectl apply -f pod-design/jobs/completions-job.yaml
+kubectl describe job pi-with-completion
+kubectl delete job pi-with-completion
+
+Create the same job, but make it run 5 parallel times:
+kubectl apply -f pod-design/jobs/parallelism-job.yaml
+
+Chapter notes:
+you can use the logs on jobs, but only with prefix, other it targets the pod
+busybox use the /bin/sh as command
+
+
+Cron Jobs
+Create a cron job with image busybox that runs on a schedule of "*/1 * * * *" 
+and writes 'date; echo Hello from the Kubernetes cluster' to standard output:
+kubectl create cronjob my-job --image=busybox --schedule="*/1 * * * *" -- /bin/sh -c 'date; echo Hello from the Kubernetes cluster'
+
+See its logs and delete it:
+kubectl get po   # copy the container just created
+kubectl logs <container> # you will see the date and message 
+kubectl delete cj busybox --force #cj stands for cronjob and --force to delete immediately 
+
+Create the same cron job again, and watch the status. Once it ran, check which job ran by the created cron job. Check the log, and delete the cron job:
+kubectl describe cj my-job
+kubectl describe job my-job-28236400
+kubectl logs my-job-28236400-86zzn
+
+Create a cron job with image busybox that runs every minute and writes 'date; echo Hello from the Kubernetes cluster' 
+to standard output. 
+The cron job should be terminated if it takes more than 17 seconds to start execution after its scheduled time (i.e. the job missed its scheduled time).:
+kubectl apply -f pod-design/cron-jobs/late-cronjob.yaml
+
+Create a cron job with image busybox that runs every minute and writes 'date; echo Hello from the Kubernetes cluster' to standard output. 
+The cron job should be terminated if it successfully starts but takes more than 12 seconds to complete execution:
+kubectl apply -f pod-design/cron-jobs/timeout-cronjob.yaml
+
+Create a job from cronjob:
+kubectl create job test-job --from=cronjob/hello-timeout
+
+
+
+Configuration
+
+ConfigMaps
+
+Create a configmap named config with values foo=lala,foo2=lolo:
+kubectl create configmap config --from-literal=foo=lala --from-literal=foo2=lolo
+
+Display its values:
+kubectl get cm config -o yaml
+# or
+kubectl describe cm config
+
+Create and display a configmap from a file:
+echo -e "foo3=lili\nfoo4=lele" > config.txt
+kubectl create cm configmap2 --from-file=config.txt
+kubectl get cm configmap2 -o yaml
+
+
+Create and display a configmap from a .env file:
+echo -e "var1=val1\n# this is a comment\n\nvar2=val2\n#anothercomment" > config.env
+kubectl create cm configmap3 --from-env-file=config.env
+kubectl describe cm configmap3
+
+Create and display a configmap from a file, giving the key 'special':
+kubectl create cm configmap5 --from-file=special=config.txt
+kubectl describe cm configmap5
+kubectl get cm configmap5 -o yaml
+
+Create a configMap called 'options' with the value var5=val5. 
+Create a new nginx pod that loads the value from variable 'var5' in an env variable called 'option':
+kubectl create configmap options --from-literal=var5=val5
+vi nginx-config-pod.yaml
+kubectl apply -f nginx-config-pod.yaml
+kubectl exec -it nginx-config-pod -- env | grep option # will show 'option=val5'
+
+Create a configMap 'anotherone' with values 'var6=val6', 'var7=val7'. 
+Load this configMap as env variables into a new nginx pod:
+
+Create a configMap 'anotherone' with values 'var6=val6', 'var7=val7'. 
+Load this configMap as env variables into a new nginx pod:
+kubectl create configmap anotherone --from-literal=var6=val6 --from-literal=var7=val7
+kubectl run nginx-configs-pod --image=nginx -o yaml --dry-run=client > nginx-configs-pod.yaml
+vi nginx-configs-pod.yaml
+kubectl apply nginx-configs-pod.yaml
+
+Create a configMap 'cmvolume' with values 'var8=val8', 'var9=val9'. 
+Load this as a volume inside an nginx pod on path '/etc/lala'. 
+Create the pod and 'ls' into the '/etc/lala' directory.:
+
+kubectl create configmap cmvolume --from-literal=var8=val8 --from-literal=var9=val9
+kubectl run nginx-config-volume-pod --image=nginx --restart=Never --dry-run=client -o yaml > nginx-config-volume.yaml
+kubectl apply -f nginx-config-volume.yaml --dry-run=client
+kubectl exec nginx-config-volume-pod -it -- /bin/sh -c "ls /etc/lala"
+
+
+Chapter notes: 
+k8 uses keys as file names and value as the content due to consistency and compactibility
+configMapRef doesnt exist on main ConfigMap docs page
+if you mount configMap as volume in pod, keys are the filenames, and the values are the text inside the file
+
+
+SecurityContext
+
+Create the YAML for an nginx pod that runs with the user ID 101. No need to create the pod:
+kubectl run nginx-user-id-pod --image=nginx --restart=Never --dry-run=client -o yaml > nginx-user-id-pod.yaml
+vi nginx-user-id-pod.yaml
+
+Create the YAML for an nginx pod that has the capabilities "NET_ADMIN", "SYS_TIME" added to its single container:
+kubectl run nginx-capabilities-pod --image=nginx --restart=Never --dry-run=client -o yaml > nginx-capabilities-pod.yaml
+vi nginx-capabilities-pod.yaml
+kubectl apply -f nginx-capabilities-pod.yaml --dry-run=client
+
+Resource requests and limits
+
+Create an nginx pod with requests cpu=100m,memory=256Mi and limits cpu=200m,memory=512Mi:
+kubectl run requests-limits-pod --image=nginx --restart=Never -o yaml --dry-run=client > requests-limits-pod.yaml
+vi requests-limits-pod.yaml
+kubectl apply -f requests-limits-pod.yaml --dry-run=client
+
+Limit Ranges
+
+Create a namespace with limit range:
+kubectl create ns limits
+vi limit-range.yaml
+kubectl apply -f limit-range.yaml -n limits
+
+Describe the namespace limitrange:
+kubectl describe limitrange limit-range -n limits
+
+Create a pod with resources requests memory = half of max memory constraint in namespace:
+kubectl create ns limit-test
+vi limit-range-test.yaml
+kubectl apply -f limit-range-test.yaml -n limit-test
+vi pod-limit-range-test.yaml
+kubectl apply -f pod-limit-range-test.yaml -n limit-test
+
+Chapter notes: 
+limit range defaults request and limit have no inner checking with defined max and min
+if you dont specify the request/limits they inherit in some predefined ways the ones from limit range
+
+
+Resource Quotas
+Create ResourceQuota in namespace one with hard requests cpu=1, memory=1Gi and hard limits cpu=2, memory=2Gi.:
+kubectl create ns quotas
+vi quota.yaml
+kubectl apply -f quota.yaml -n quotas
+
+Attempt to create a pod with resource requests cpu=2, memory=3Gi and limits cpu=3, memory=4Gi in previous namespace:
+vi wrong-pod.yaml
+kubectl apply -f wrong-pod.yaml -n quotas
+
+Create a pod with resource requests cpu=0.5, memory=1Gi and limits cpu=1, memory=2Gi in namespace one:
+vi good-pod.yaml
+kubectl apply -f good-pod.yaml -n quotas
+
+
+Secrets
+Create a secret called mysecret with the values password=mypass
+kubectl create secret generic my-secret --from-literal=password=mypass
+
+Create a secret called mysecret2 that gets key/value from a file:
+echo -n admin > username
+kubectl create secret generic mysecret2 --from-file=username
+
+Get the value of mysecret2:
+kubectl get secret mysecret2 -o jsonpath='{.data.username}' | base64 -d
+
+Create an nginx pod that mounts the secret mysecret2 in a volume on path /etc/foo:
+vi pod-with-secret-file.yaml
+kubectl apply -f pod-with-secret-file.yaml
+kubectl exec -it pod-with-secret-file -- /bin/bash
+ls /etc/foo  # shows username
+cat /etc/foo/username # shows admin
+
+Delete the pod you just created and mount the variable 'username' from secret mysecret2 onto a new nginx pod in env variable called 'USERNAME':
+kubectl delete pod pod-with-secret
+vi pod-with-secret-env.yaml
+kubectl apply -f pod-with-secret-env.yaml
+kubectl exec -it pod-with-secret-env -- env | grep USERNAME | cut -d '=' -f 2 # will show 'admin'
+
+Create a Secret named 'ext-service-secret' in the namespace 'secret-ops'. 
+Then, provide the key-value pair API_KEY=LmLHbYhsgWZwNifiqaRorH8T as literal.:
+kubectl create namespace secret-ops
+kubectl create secret generic ext-service-secret --from-literal=API_KEY=LmLHbYhsgWZwNifiqaRorH8T
+
+
+Consuming the Secret. Create a Pod named 'consumer' with the image 'nginx' in the namespace 'secret-ops' and consume the Secret as an environment variable. 
+Then, open an interactive shell to the Pod, and print all environment variables.
+kubectl run consumer --image=nginx:1.14.2 --restart=Never --dry-run=client -o yaml -n secret-ops > consumer.yaml
+vi consumer.yaml
+kubectl apply -f consumer.yaml
+kubectl exec -it consumer -n secret-ops -- env
+
+Create a Secret named 'my-secret' of type 'kubernetes.io/ssh-auth' in the namespace 'secret-ops'. 
+Define a single key named 'ssh-privatekey', and point it to the file 'id_rsa' in this directory.:
+kubectl create secret generic my-secret -n secret-ops --type=kubernetes.io/ssh-auth --from-file=ssh-privatekey=id_rsa 
+kubectl get secret  my-secret -n secret-ops -o yaml
+
+
+Create a Pod named 'consumer' with the image 'nginx' in the namespace 'secret-ops', and consume the Secret as Volume. 
+Mount the Secret as Volume to the path /var/app with read-only access. 
+Open an interactive shell to the Pod, and render the contents of the file.:
+kubectl run consumer-vol -n secret-ops --image=nginx:1.14.2 --restart=Never -o yaml --dry-run=client > consumer-vol.yaml
+kubectl apply -f consumer-vol.yaml
+kubectl exec -it consumer-vol -n secret-ops -- cat /var/app/ssh-privatekey
+
+
+ServiceAccounts
+
+See all the service accounts of the cluster in all namespaces:
+kubectl get sa -A
+
+Create a new serviceaccount called 'myuser':
+kubectl create serviceaccount myuser
+
+Create an nginx pod that uses 'myuser' as a service account:
+vi pod-service-account.yaml
+kubectl apply -f pod-service-account.yaml
+kubectl describe pod nginx-with-service-account
+
+Generate an API token for the service account 'myuser':
+kubectl create token myuser
+
+Chapter notes:
+we first create the Role, then create the RoleBinding to connect the role and the ServiceAccount and then create a pod using the said ServiceAccount.
+Token can be auto-mounted or manually
+
+
+Observability
+
+Probes
+
+Create an nginx pod with a liveness probe that just runs the command 'ls'. 
+Save its YAML in pod.yaml. Run it, check its probe status, delete it.:
+vi nginx-liveness.yaml
+kubect apply -f nginx-liveness.yaml
+kubectl delete po nginx-liveness
+
+Modify the pod.yaml file so that liveness probe starts kicking in after 5 seconds whereas the interval between probes would be 5 seconds. 
+Run it, check the probe, delete it.
+vi nginx-liveness.yaml
+kubect apply -f nginx-liveness.yaml
+kubectl delete po nginx-liveness
+
+Create an nginx pod (that includes port 80) with an HTTP readinessProbe on path '/' on port 80. 
+Again, run it, check the readinessProbe, delete it.
+kubectl run nginx-readiness --image=nginx:1.14.2 -o yaml --dry-run=client > nginx-readiness.yaml
+vi nginx-readiness.yaml
+kubectl apply -f nginx-readiness.yaml
+kubectl delete -f nginx-readiness.yaml
+
+Lots of pods are running in qa,alan,test,production namespaces. 
+All of these pods are configured with liveness probe. 
+Please list all pods whose liveness probe are failed in the format of <namespace>/<pod name> per line.:
+kubectl get events -o json | jq -r '.items[] | select(.message | contains("failed liveness probe")).involvedObject | .namespace + "/" + .name'
+
+Chapter notes:
+for http.get ports we have to use the integer port or named port, not "80"
+
+Logging
+
+Create a busybox pod that runs i=0; while true; do echo "$i: $(date)"; i=$((i+1)); sleep 1; done. 
+Check its logs:
+kubectl run busybox --image=busybox --restart=Never -- /bin/sh -c 'i=0; while true; do echo "$i: $(date)"; i=$((i+1)); sleep 1; done'
+kubectl logs busybox -f
+
+Debugging
+
+Create a busybox pod that runs 'ls /notexist'. Determine if there's an error (of course there is), see it. In the end, delete the pod:
+kubectl run busybox --image=busybox --restart=Never --command -- ls /notexist
+kubectl logs busybox
+kubectl delete pod busybox
+
+Create a busybox pod that runs 'notexist'. Determine if there's an error (of course there is), see it. In the end, delete the pod forcefully with a 0 grace period:
+kubectl run busybox --image=busybox --restart=Never --command -- notexist
+kubectl describe pod busybox
+kubectl delete pod busbybox --force --grace-period=0
+
+Get CPU/memory utilization for nodes (metrics-server must be running):
+Install metrics server:
+minikube addons enable metrics-server
+kubectl top nodes
+
+
+Services
+
+Services and Networking
+
+Create a pod with image nginx called nginx and expose its port 80
+kubectl run nginx --image=nginx:1.14.2 --restart=Never --port=80 --expose
+
+Confirm that ClusterIP has been created. Also check endpoints:
+kubectl get svc
+kubectl get endpoints
+
+Get service's ClusterIP, create a temp busybox pod and 'hit' that IP with wget:
+kubectl get svc #10.111.26.184
+kubectl run busybox --rm -it --image=busybox --restart=Never -- wget -O http://10.111.26.184
+
+Convert the ClusterIP to NodePort for the same service and find the NodePort port. Hit service using Node's IP. Delete the service and the pod at the end:
+kubectl edit svc nginx
+minikube service nginx --url
+wget -O- 127.0.0.1:PORT
+TODO
+
+Create a deployment called foo using image 'dgkanatsios/simpleapp' (a simple server that returns hostname) and 3 replicas. 
+Label it as 'app=foo'. Declare that containers in this pod will accept traffic on port 8080 (do NOT create a service yet):
+kubectl create deployment foo --image=dgkanatsios/simpleapp --replicas=3 --port=8080 #this auto labels the deployment and pods with app=foo
+kubectl label deployment foo --overwrite app=foo #This is optional since kubectl create deploy foo will create label app=foo by default, this just labels the deployment, not the pods as well
+
+Get the pod IPs. Create a temp busybox pod and try hitting them on port 8080:
+kubectl get po -o wide
+kubectl run -it --rm busybox --image=busybox --restart=Never -- wget -O- http://10.244.0.44:8080 #one of pods
+
+Create a service that exposes the deployment on port 6262. Verify its existence, check the endpoints:
+kubectl expose deployment foo --port=6262 --target-port=8080
+kubectl get svc
+kubectl get endpoints
+
+Create a temp busybox pod and connect via wget to foo service. 
+Verify that each time there's a different hostname returned. 
+Delete deployment and services to cleanup the cluster:
+kubectl run -it --rm busybox --image=busybox --restart=Never -- wget -O- http://foo.default.svc:6262
+kubectl delete deploy foo 
+kubectl delete svc foo
+
+Create an nginx deployment of 2 replicas, 
+expose it via a ClusterIP service on port 80. 
+Create a NetworkPolicy so that only pods with labels 'access: granted' can access the deployment and apply it:
+kubectl create deployment nginx --image=nginx:1.14.2 --restart=Never --replicas=2 --port=80
+kubectl expose deployment nginx --port=80 --target-port=80
+vi network-policy.yaml
+minikube stop
+minikube start --cni calico
+kubectl apply -f network-policy.yaml
+kubectl run -it --rm busybox --image=busybox --restart=Never -- wget -O- http://nginx.default.svc # does not works
+kubectl run -it --rm busybox --image=busybox --restart=Never --labels="access=granted" -- wget -O- http://nginx.default.svc
+
+
+Chapter notes:
+Endpoints
+use edit to patch or change the resource ad-hoc
+kubectl expose command
+expose overwrites existing service
+In order to enforce the network policies, network plugin had to be enabled
+
+
+State Persistence
+
+Create busybox pod with two containers, each one will have the image busybox and will run the 'sleep 3600' command.
+Make both containers mount an emptyDir at '/etc/foo'. 
+Connect to the second busybox, write the first column of '/etc/passwd' file to '/etc/foo/passwd'. 
+Connect to the first busybox and write '/etc/foo/passwd' file to standard output. 
+Delete pod.
+
+vi busybox-pod.yaml
+kubectl apply -f busybox-pod.yaml
+kubectl exec busybox-pod -it -c busybox-2 -- /bin/sh -c "cut -d: -f1 /etc/passwd > /etc/foo/passwd"
+kubectl exec busybox-pod -it -c busybox-1 -- /bin/sh -c "cat /etc/foo/passwd"
+kubectl delete pod busybox-pod
+
+Create a PersistentVolume of 10Gi, called 'myvolume'. 
+Make it have accessMode of 'ReadWriteOnce' and 'ReadWriteMany', storageClassName 'normal', mounted on hostPath '/etc/foo'. 
+Save it on pv.yaml, add it to the cluster. 
+Show the PersistentVolumes that exist on the cluster:
+vi pv.yaml
+kubectl apply -f pv.yaml
+
+Create a PersistentVolumeClaim for this storage class, called 'mypvc', a request of 4Gi and an accessMode of ReadWriteOnce, with the storageClassName of normal, and save it on pvc.yaml. 
+Create it on the cluster. 
+Show the PersistentVolumeClaims of the cluster. Show the PersistentVolumes of the cluster:
+vi pvc.yaml
+kubectl apply -f pvc.yaml
+kubectl get pvc
+
+Create a busybox pod with command 'sleep 3600', save it on pod.yaml. 
+Mount the PersistentVolumeClaim to '/etc/foo'. 
+Connect to the 'busybox' pod, and copy the '/etc/passwd' file to '/etc/foo/passwd':
+vi busybox-pvc.yaml
+kubectl apply -f busybox-pvc.yaml
+kubectl exec -it busybox-pvc -- /bin/sh -c "cp /etc/passwd /etc/foo/passwd"
+
+Create a second pod which is identical with the one you just created 
+(you can easily do it by changing the 'name' property on pod.yaml). 
+Connect to it and verify that '/etc/foo' contains the 'passwd' file.
+Delete pods to cleanup. Note: If you can't see the file from the second pod, can you figure out why? 
+What would you do to fix that?
+cp busybox-pvc.yaml second-busybox-pvc.yaml
+vi second-busybox-pvc.yaml
+kubectl apply -f second-busybox-pvc.yaml
+kubectl exec -it second-busybox-pvc -- /bin/sh -c "cat /etc/foo"
+
+Create a busybox pod with 'sleep 3600' as arguments. 
+Copy '/etc/passwd' from the pod to your local folder:
+kubectl run busybox --image=busybox --restart=Never -- /bin/sh -c "sleep 3600"
+kubectl cp default/busybox:etc/passwd passwd.txt
+
+Chapter notes:
+kubectl cp command
+error tar: removing leading '/' from member names
+
+
+Helm
+
+Creating a basic Helm chart:
+helm create foo
+
+Running a Helm chart:
+helm install -f myvalues.yaml -f override.yaml  myredis ./redis
+
+Find pending Helm deployments on all namespaces:
+helm list --pending -A
+
+Uninstall a Helm release:
+helm uninstall -n namespace release_name
+
+Upgrading a Helm chart:
+helm upgrade --set foo=bar --set foo=newbar redis ./redis
+
+Using Helm repo:
+helm upgrade --repo my-custom-repo --devel --set foo=bar --set foo=newbar redis ./redis
+
+Download a Helm chart from a repository:
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm pull --untar bitnami/redis --version 18.0.4
+
+Add the Bitnami repo at https://charts.bitnami.com/bitnami to Helm:
+helm repo add https://charts.bitnami.com/bitnami
+
+Write the contents of the values.yaml file of the bitnami/node chart to standard output:
+helm show values bitnami/node
+
+Install the bitnami/node chart setting the number of replicas to 5:
+helm show values bitnami/node | grep -i replica
+helm install my-node bitnami/node --set replicaCount=5
+
+Chapter notes:
+helm repo commands
+
+
+CRD in K8s
+
+Create a CustomResourceDefinition manifest file for an Operator with the following specifications :
+Name : operators.stable.example.com
+Group : stable.example.com
+Schema: <email: string><name: string><age: integer>
+Scope: Namespaced
+Names: <plural: operators><singular: operator><shortNames: op>
+Kind: Operator
+:
+vi crd.yaml
+kubectl apply -f crd.yaml
+
+Create the CRD resource in the K8S API:
+vi co.yaml
+kubectl apply -f co.yaml
+
+Listing operator:
+kubectl get operators
+kubectl describe operator my-new-operator
+
+
+Create a Dockerfile to deploy an Apache HTTP Server which hosts a custom main page:
+vi Dockerfile
+
+Build and see how many layers the image consists of:
+podman build -t apache-httpd-demo .
+podman image ls
+podman image tree localhost/apache-httpd-demo
+
+Run the image locally, inspect its status and logs, finally test that it responds as expected:
+podman run -d -p 8081:80 aebe3a25ea03
+podman ps 
+podman logs 1fd9d5242c43
+curl localhost:8081
+
+Run a command inside the pod to print out the index.html file:
+podman exec -it --user root 7578168f5f50 cat /usr/local/apache2/htdocs/index.html
+
+Tag the image with ip and port of a private local registry and then push the image to this registry:
+podman tag localhost/simpleapp $registry_ip:5000/simpleapp
+podman push $registry_ip:5000/simpleapp
+I have no access to this private local registry so I make my own:
+docker run -d -p 5000:5000 --restart=always --name registry registry:2
+registry_ip="localhost"
+cat > /etc/containers/registries.conf.d/myregistry.conf <<EOF
+[[registry]]
+location = "localhost:32000"
+insecure = true
+
+
+
+Verify that the registry contains the pushed image and that you can pull it:
+podman search localhost:5000/simpleapp
+or
+curl http://$registry_ip:5000/v2/_catalog
+
+Run a pod with the image pushed to the registry:
+podman run -d -p 8080:80 localhost:5000/simpleapp:latest
+curl localhost:8080
+
+Log into a remote registry server and then read the credentials from the default file:
+podman login localhost:5000 # no username and password required for the registry container
+cat /run/user/0/containers/auth.json #this is locally
+
+Create a secret both from existing login credentials and from the CLI:
+kubectl create secret generic registry-secret --from-file=/run/user/0/containers/auth.json
+vi private-reg-pod.yaml 
+
+minikube addons configure registry-creds # did not do this because i havent set the local container registry with username and password
+
+
+Chapter notes: 
+
+
+
+
+
+
+
+

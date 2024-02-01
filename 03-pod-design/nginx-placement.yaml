@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx-placement
+  name: nginx-placement
+spec:
+  containers:
+  - image: nginx
+    name: nginx-placement
+    resources: {}
+  nodeSelector:
+    accelerator: nvidia-tesla-p100
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}

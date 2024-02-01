@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: nginx-config-volume-pod
+  name: nginx-config-volume-pod
+spec:
+  containers:
+  - image: nginx
+    name: nginx-config-volume-pod
+    resources: {}
+    volumeMounts:
+    - name: config
+      mountPath: /etc/lala  
+  volumes:
+  # You set volumes at the Pod level, then mount them into containers inside that Pod
+  - name: config
+    configMap:
+      # Provide the name of the ConfigMap you want to mount.
+      name: cmvolume   
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}

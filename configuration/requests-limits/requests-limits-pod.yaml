@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: requests-limits-pod
+  name: requests-limits-pod
+spec:
+  containers:
+  - image: nginx
+    name: requests-limits-pod
+    resources: {}
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "200m"   
+  dnsPolicy: ClusterFirst
+  restartPolicy: Never
+status: {}
